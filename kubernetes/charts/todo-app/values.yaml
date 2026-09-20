@@ -4,7 +4,7 @@ preview:
   PRNumber: ""
   commitID: ""
 
-# TODO: Replace it with the actual IP of the load balancer (run `minikube tunnel` to get the IP)
+# Kind exposes Istio through localhost; preview hosts use sslip.io for wildcard DNS.
 istioLoadBalancerIP: "127.0.0.1"
 
 image:

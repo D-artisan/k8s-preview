@@ -10,9 +10,13 @@ inputs:
     description: "PR number"
     required: true
   istio_load_balancer_ip:
-    description: "Istio load balancer IP with SSLIP.io domain"
+    description: "Ingress hostname, for example 127.0.0.1.sslip.io"
     required: true
     default: "127.0.0.1.sslip.io"
+  ingress_port:
+    description: "Host port exposed by the local Kind cluster"
+    required: false
+    default: "30080"
   git_rev:
     description: "Short Git commit hash"
     required: true
@@ -26,8 +30,8 @@ runs:
       shell: bash
       id: ingress_urls
       run: |-
-        commit_url="http://${{ inputs.service_name }}-${{ inputs.pr_number }}-pr-${{ inputs.git_rev }}.${{ inputs.istio_load_balancer_ip }}"
-        pr_url="http://${{ inputs.service_name }}-${{ inputs.pr_number }}-pr.${{ inputs.istio_load_balancer_ip }}"
+        commit_url="http://${{ inputs.service_name }}-${{ inputs.pr_number }}-pr-${{ inputs.git_rev }}.${{ inputs.istio_load_balancer_ip }}:${{ inputs.ingress_port }}"
+        pr_url="http://${{ inputs.service_name }}-${{ inputs.pr_number }}-pr.${{ inputs.istio_load_balancer_ip }}:${{ inputs.ingress_port }}"
         echo "commit_url=$commit_url" >> $GITHUB_OUTPUT
         echo "pr_url=$pr_url" >> $GITHUB_OUTPUT
 

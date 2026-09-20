@@ -14,9 +14,9 @@ Here's the cool part: these environments are smart enough to scale down to zero 
 
 And yes, you can run integration tests against these environments too. Because manually clicking through your app is so 2015.
 
-This guide is designed for local Kubernetes clusters like Minikube, but don't let that stop you—it'll work on any Kubernetes cluster that's willing to play along.
+This guide uses a local Kind Kubernetes cluster, but the Kubernetes resources remain portable to any conformant cluster.
 
-> **Quick start option:** You can use [Killercoda](https://killercoda.com/armin-aminian/scenario/cost-effective-k8s-preview) for a faster experience with no local setup required. However, I recommend testing on a local Minikube cluster for the best learning experience.
+> **Quick start option:** You can use [Killercoda](https://killercoda.com/armin-aminian/scenario/cost-effective-k8s-preview) for a faster experience with no local setup required. For the full local workflow, use the Kind setup in this repository.
 
 ### The Big Picture
 
@@ -46,7 +46,7 @@ graph TB
 
 Before we dive in, let's gather our tools. Think of this as assembling the Avengers, but for Kubernetes:
 
-- **Kubernetes cluster** (Minikube, kind, etc.) - The stage where our drama unfolds
+- **Kind** - The local Kubernetes cluster used by this repository
 - **Helm** - The template wizard
 - **Skaffold** - The automated build assistant (because manual builds are for cavemen)
 - **ArgoCD** - The GitOps maestro
@@ -55,9 +55,11 @@ Before we dive in, let's gather our tools. Think of this as assembling the Aveng
 
 ### Kubernetes Cluster
 
-I'm rolling with Minikube here—it's a lightweight Kubernetes cluster that lives happily on your laptop without consuming it like a black hole.
+This repository uses [Kind](https://kind.sigs.k8s.io/) so the Kubernetes control plane runs in Docker alongside the rest of the local tooling.
 
-Grab it from the [Minikube website](https://minikube.sigs.k8s.io/docs/start), then summon your cluster with `make create-cluster`. Easy peasy.
+Install Kind, then create the cluster with `make create-cluster`. The cluster definition in `kubernetes/kind-config.yaml` exposes Istio HTTP on `localhost:30080` and HTTPS on `localhost:30443`. The Makefile also changes the Kind control-plane container restart policy to `no`, so it will not automatically restart after Docker/WSL restarts.
+
+Use `make stop-cluster` and `make start-cluster` when you want to explicitly stop or start the existing cluster without deleting its state.
 
 ### Helm
 
@@ -89,7 +91,7 @@ Read up on [KEDA documentation](https://keda.sh/docs/latest/) and the [HTTP Add-
 
 Istio is our service mesh—think of it as a sophisticated traffic management system for your microservices. It's the bouncer that decides who gets in and where they go.
 
-Minikube has an Istio add-on (how convenient!), which you can enable with `make enable-istio`. Or, if you're feeling adventurous, install it manually via the [Istio website](https://istio.io/latest/docs/setup/getting-started/).
+Kind does not provide an Istio add-on. Install `istioctl` using the [Istio installation guide](https://istio.io/latest/docs/setup/getting-started/), then run `make enable-istio`. The Makefile installs Istio and exposes its ingress gateway through the fixed NodePorts used by the Kind port mappings.
 
 
 ## The Big Picture (Background and Context)
@@ -405,11 +407,10 @@ graph TD
     Tools --> Fork[Fork GitHub Repository]
     Fork --> Docker[Configure Docker Hub]
     Docker --> Skaffold[Update skaffold.yaml]
-    Skaffold --> Gateway[Create Istio Gateway]
-    Gateway --> IP[Get Istio Load Balancer IP]
-    IP --> Values[Update values.yaml]
-    Values --> CI[Update ci-preview.yaml]
-    CI --> AppSet[Create ApplicationSet]
+    Skaffold --> Cluster[Create Kind Cluster]
+    Cluster --> Istio[Install Istio]
+    Istio --> Gateway[Create Istio Gateway]
+    Gateway --> AppSet[Create ApplicationSet]
     AppSet --> Done([Ready to Deploy! 🚀])
     
     style Start fill:#4CAF50
@@ -421,9 +422,9 @@ graph TD
 - [ ] Fork the GitHub repository
 - [ ] Set up Docker Hub and configure `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets
 - [ ] Update `skaffold.yaml` with your Docker registry
-- [ ] Create an Istio Gateway
-- [ ] Update `values.yaml` with the Istio load balancer IP
-- [ ] Update `ci-preview.yaml` with the Istio load balancer IP
+- [ ] Create the Kind cluster with `make create-cluster`
+- [ ] Install Istio with `make enable-istio`
+- [ ] Create the Istio Gateway with `make create-istio-gateway`
 - [ ] Create the `ApplicationSet` resource
 
 Don't worry—we'll walk through each step together. You've got this!
@@ -484,36 +485,34 @@ make create-istio-gateway
 
 Easy mode engaged!
 
-### Update `values.yaml` and `ci-preview.yaml` with the Istio Load Balancer IP
+### Access the Istio Gateway through Kind
 
-To access preview environments, we need the Istio Ingress Gateway's IP address. Minikube makes this easy with the `minikube tunnel` command (which you should keep running in a terminal—think of it as watering a plant that needs constant attention).
+Kind does not need a load-balancer tunnel for this local setup. The cluster configuration maps the Istio HTTP NodePort directly to `localhost:30080`.
 
-Get the IP:
+The repository defaults are already configured for this:
+
+```yaml
+# kubernetes/charts/todo-app/values.yaml
+istioLoadBalancerIP: "127.0.0.1"
+```
+
+The preview hostnames use `sslip.io`, so a host such as `todo-123-pr.127.0.0.1.sslip.io` resolves to your local machine. GitHub PR comments include port `30080`.
+
+Verify the ingress before deploying a preview:
 
 ```bash
-kubectl get svc -n istio-system istio-ingressgateway -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+kubectl get svc istio-ingressgateway -n istio-system
+curl -I http://localhost:30080
 ```
 
-Update `values.yaml`:
-
-```yaml
-istioLoadBalancerIP: "YOUR_ISTIO_INGRESS_GATEWAY_IP"
-```
-
-And `ci-preview.yaml`:
-
-```yaml
-istio_load_balancer_ip: "YOUR_ISTIO_INGRESS_GATEWAY_IP"
-```
-
-Pro tip: Copy-paste is your friend here. Nobody likes typos in IP addresses.
+A `404` from Istio is expected before a matching preview VirtualService exists.
 
 ### Create the ApplicationSet Resource
 
 This is the piece that makes ArgoCD watch for Pull Requests and automatically deploy preview environments.
 
 ```bash
-make create-application-set
+make add-argocd-applicationset
 ```
 
 The command will ask for your GitHub repository details (`OWNER` and `REPO`). Just answer honestly—it's not a trick question.
@@ -555,7 +554,7 @@ Shortly after, you'll see a comment on your PR with the **PR URL** and **Commit 
 
 ![PR Comment](resources/pictures/pr-comment.png)
 
-**Important:** Keep `minikube tunnel` running in the background, or you'll be staring at a "connection refused" error wondering what went wrong. (Spoiler: the tunnel is what went wrong.)
+**Important:** Keep the Kind cluster running. You can verify the local ingress at any time with `curl -I http://localhost:30080`.
 
 Now let's check ArgoCD! You should see a new `Application` resource for your PR. It might take up to 90 seconds to appear—ArgoCD isn't *instant*, but it's close.
 
