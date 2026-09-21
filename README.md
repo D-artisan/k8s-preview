@@ -1,5 +1,5 @@
 # Complete Guide to Preview Environment on Kubernetes
-DISCLAIMER (D-artisan): The original author of this work used Minikube -- I swapped it for Kind (https://kind.sigs.k8s.io/) ... because I can :)
+DISCLAIMER (D-artisan): The original author (https://github.com/araminian) of this work used Minikube -- I swapped it for Kind (https://kind.sigs.k8s.io/) ... because I can :)
 
 Welcome, fellow Kubernetes enthusiast! 👋
 
