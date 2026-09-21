@@ -1,6 +1,7 @@
 CLUSTER_NAME ?= k8s-preview
 KUBE_CONTEXT ?= kind-$(CLUSTER_NAME)
 KIND_CONFIG ?= kubernetes/kind-config.yaml
+KIND_IMAGE ?= kindest/node:v1.32.2
 ISTIO_NAMESPACE ?= istio-system
 
 GIT_REV := $(shell git rev-parse --short HEAD)
@@ -30,7 +31,7 @@ render-preview-test:
 .PHONY: create-cluster
 create-cluster:
 	@command -v kind >/dev/null 2>&1 || { echo "kind is required: https://kind.sigs.k8s.io/docs/user/quick-start/"; exit 1; }
-	kind create cluster --name $(CLUSTER_NAME) --config $(KIND_CONFIG)
+	kind create cluster --name $(CLUSTER_NAME) --image $(KIND_IMAGE) --config $(KIND_CONFIG)
 	@docker update --restart=no $(CLUSTER_NAME)-control-plane >/dev/null
 	kubectl config use-context $(KUBE_CONTEXT)
 	kubectl wait --for=condition=Ready node --all --timeout=120s
