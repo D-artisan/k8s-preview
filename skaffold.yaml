@@ -5,7 +5,7 @@ metadata:
   name: todo-app
 build:
   artifacts:
-    - image: rminz/todo-app # TODO: Replace it with your own image registry
+    - image: dockerdartisan/todo-app # TODO: Replace it with your own image registry
       platforms:
         - linux/amd64
         - linux/arm64

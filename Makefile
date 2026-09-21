@@ -87,8 +87,8 @@ access-argocd:
 	@echo "Admin password:"
 	@kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d
 	@echo ""
-	@echo "Check the ArgoCD UI at http://localhost:8080"
-	kubectl port-forward svc/argocd-server -n argocd 8080:443
+	@echo "Check the ArgoCD UI at http://localhost:8085"
+	kubectl port-forward svc/argocd-server -n argocd 8085:443
 
 .PHONY: add-argocd-applicationset
 add-argocd-applicationset:
