@@ -19,6 +19,11 @@ This guide uses a local Kind Kubernetes cluster, but the Kubernetes resources re
 
 > **Quick start option:** You can use [Killercoda](https://killercoda.com/armin-aminian/scenario/cost-effective-k8s-preview) for a faster experience with no local setup required. For the full local workflow, use the Kind setup in this repository.
 
+
+## Learn This Project Step by Step
+
+Beginner-friendly concept guides based on this repository are in [`devdocs/`](devdocs/README.md). Start there if you want to understand Kubernetes, Kind, Argo CD, Istio, KEDA, and the full preview-environment flow while using this project.
+
 ### The Big Picture
 
 Here's how everything fits together:
@@ -426,6 +431,9 @@ graph TD
 - [ ] Create the Kind cluster with `make create-cluster`
 - [ ] Install Istio with `make enable-istio`
 - [ ] Create the Istio Gateway with `make create-istio-gateway`
+- [ ] Install KEDA with `make install-keda`
+- [ ] Install the KEDA HTTP Add-on with `make install-keda-http-addon`
+- [ ] Install Argo CD with `make install-argocd`
 - [ ] Create the `ApplicationSet` resource
 
 Don't worry—we'll walk through each step together. You've got this!
@@ -508,23 +516,166 @@ curl -I http://localhost:30080
 
 A `404` from Istio is expected before a matching preview VirtualService exists.
 
+### Install KEDA and Argo CD Before Creating the ApplicationSet
+
+Install KEDA and its HTTP Add-on before Argo CD starts syncing preview resources. Otherwise Argo CD can fail because Kubernetes does not yet know the `HTTPScaledObject` resource type.
+
+```bash
+make install-keda
+make install-keda-http-addon
+
+kubectl get pods -n keda
+kubectl get pods -n keda-http-addon
+kubectl get crd httpscaledobjects.http.keda.sh
+kubectl api-resources --api-group=http.keda.sh
+```
+
+Install Argo CD:
+
+```bash
+make install-argocd
+```
+
+Verify the ApplicationSet CRD and controller:
+
+```bash
+kubectl get crd applicationsets.argoproj.io
+kubectl rollout status deployment/argocd-applicationset-controller   -n argocd   --timeout=180s
+```
+
 ### Create the ApplicationSet Resource
 
-This is the piece that makes ArgoCD watch for Pull Requests and automatically deploy preview environments.
+This makes Argo CD watch labeled pull requests and create one Application per preview.
 
 ```bash
 make add-argocd-applicationset
 ```
 
-The command will ask for your GitHub repository details (`OWNER` and `REPO`). Just answer honestly—it's not a trick question.
+For this fork enter:
 
-Want to see ArgoCD in action? Access the UI:
+```text
+OWNER=D-artisan
+REPO=k8s-preview
+```
+
+Access the Argo CD UI:
 
 ```bash
 make access-argocd
 ```
 
-This will give you the username and password. Head over to http://localhost:8080 and bask in the GitOps glory!
+Open:
+
+```text
+https://localhost:8085
+```
+
+The local mapping is:
+
+```text
+localhost:8085 -> argocd-server Service -> Argo CD server Pod
+```
+
+## Create the Preview Pull Request Correctly
+
+The workflow is triggered by pull request events. A normal push to `main` does not create a preview.
+
+Create a feature branch:
+
+```bash
+git checkout main
+git pull origin main
+git checkout -b feature/preview-demo
+```
+
+After making your change:
+
+```bash
+git add .
+git commit -m "Test preview environment"
+git push -u origin feature/preview-demo
+```
+
+Create the PR against this fork, not the upstream repository:
+
+```bash
+gh pr create   --repo D-artisan/k8s-preview   --base main   --head feature/preview-demo   --title "Test preview environment"
+```
+
+Keep the PR open while testing.
+
+Verify it:
+
+```bash
+gh pr list --repo D-artisan/k8s-preview
+
+gh pr view   --repo D-artisan/k8s-preview   --json number,state,labels,headRefName,baseRefName
+```
+
+Watch the workflow:
+
+```bash
+gh run list   --repo D-artisan/k8s-preview   --workflow ci-preview   --limit 5
+```
+
+Once the workflow succeeds, it creates a `preview-<PR_NUMBER>` branch and adds the `preview` label. The ApplicationSet then creates an Argo CD Application such as `todo-app-preview-2`.
+
+```bash
+kubectl get applicationsets -n argocd
+kubectl get applications -n argocd -w
+```
+
+The Kubernetes namespace uses a different naming order:
+
+```text
+Argo CD Application: todo-app-preview-2
+Kubernetes namespace: preview-2-todo-app
+```
+
+Check the deployed resources:
+
+```bash
+kubectl get all -n preview-2-todo-app
+kubectl get httpscaledobject -n preview-2-todo-app
+```
+
+If the Deployment exists with zero replicas and there are no Pods, that can be expected because KEDA scales idle previews to zero.
+
+### If Argo CD Shows Missing or OutOfSync
+
+Get the exact sync error:
+
+```bash
+kubectl -n argocd get application todo-app-preview-2   -o jsonpath='{.status.operationState.message}{"\n"}'
+```
+
+Show conditions:
+
+```bash
+kubectl -n argocd get application todo-app-preview-2   -o jsonpath='{range .status.conditions[*]}{.type}{": "}{.message}{"\n"}{end}'
+```
+
+If Argo CD previously failed because `http.keda.sh/v1alpha1` was missing, first verify the CRD exists:
+
+```bash
+kubectl get crd httpscaledobjects.http.keda.sh
+kubectl api-resources --api-group=http.keda.sh
+```
+
+Then hard-refresh the Application:
+
+```bash
+kubectl annotate application todo-app-preview-2   -n argocd   argocd.argoproj.io/refresh=hard   --overwrite
+```
+
+In the UI use:
+
+```text
+REFRESH -> Hard Refresh
+SYNC -> SYNCHRONIZE
+```
+
+More detailed troubleshooting is in [`devdocs/07-troubleshooting.md`](devdocs/07-troubleshooting.md).
 
 ## Taking It for a Spin
 
